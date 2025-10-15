@@ -1,0 +1,4 @@
+apache-airflow==3.0.6
+faker==37.11.0
+pandas==2.3.3
+python-dotenv==1.1.1
