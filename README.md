@@ -20,6 +20,16 @@ This project is a library management system ETL pipeline.
 |------------------------------------------------------------------------------------|
 | Make sure you are in the root folder and please use python 3 <br> for installation |
 
+Run this code to install .venv
+```bash
+python -m venv .venv
+```
+
+Now activate the .venv using this command
+```bash
+source .venv/bin/activate
+```
+
 Run this code on your terminal or command prompt to install all the requirements:
 ```bash
 pip install -r requirements.txt

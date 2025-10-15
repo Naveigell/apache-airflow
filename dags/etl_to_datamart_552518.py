@@ -4,8 +4,6 @@ import sys
 import pandas as pd
 from airflow.providers.standard.operators.python import PythonOperator
 
-from scripts.validate import validate_not_empty
-
 # append path
 sys.path.append('../')
 sys.path.insert(1, os.path.dirname(os.path.abspath(__file__)) + '/../')
@@ -19,6 +17,7 @@ from scripts.utils     import save_data_into_csv, save_dataframe_into_sqlite
 from scripts.transform import transform_data
 from scripts.clean     import run_data_quality_checks, perform_data_cleaning
 from scripts.datamart  import datamart_build_pipeline
+from scripts.validate  import validate_not_empty
 
 FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
 STAGING_FOLDER   = FOLDER + os.getenv('STAGING_FOLDER')
