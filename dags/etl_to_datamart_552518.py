@@ -4,6 +4,8 @@ import sys
 import pandas as pd
 from airflow.providers.standard.operators.python import PythonOperator
 
+from scripts.validate import validate_not_empty
+
 # append path
 sys.path.append('../')
 sys.path.insert(1, os.path.dirname(os.path.abspath(__file__)) + '/../')
@@ -19,7 +21,7 @@ from scripts.clean     import run_data_quality_checks, perform_data_cleaning
 from scripts.datamart  import datamart_build_pipeline
 
 FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
-RAW_FOLDER       = FOLDER + os.getenv('RAW_FOLDER')
+STAGING_FOLDER   = FOLDER + os.getenv('STAGING_FOLDER')
 STAGING_DATABASE = FOLDER + '/staging/' + os.getenv('STAGING_DATABASE')
 
 def notify_failure(context):
@@ -70,9 +72,9 @@ def save_into_staging():
     None
     """
 
-    df_books   = pd.read_csv(RAW_FOLDER + '/books.csv')
-    df_patrons = pd.read_csv(RAW_FOLDER + '/patrons.csv')
-    df_loans   = pd.read_csv(RAW_FOLDER + '/loans.csv')
+    df_books   = pd.read_csv(STAGING_FOLDER + '/books.csv')
+    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
+    df_loans   = pd.read_csv(STAGING_FOLDER + '/loans.csv')
 
     transformed = transform_data(df_books, df_patrons, df_loans)
 
@@ -92,14 +94,11 @@ def validate_extraction():
     True
         If the data is consistent and not empty.
     """
-    df_books   = pd.read_csv(RAW_FOLDER + '/books.csv')
-    df_patrons = pd.read_csv(RAW_FOLDER + '/patrons.csv')
-    df_loans   = pd.read_csv(RAW_FOLDER + '/loans.csv')
-
-    # default count, just to check every length is the same
-    default_counts = len(df_books)
+    df_books   = pd.read_csv(STAGING_FOLDER + '/books.csv')
+    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
+    df_loans   = pd.read_csv(STAGING_FOLDER + '/loans.csv')
     
-    if len(df_books) == 0 or len(df_patrons) == 0 or len(df_loans) == 0:
+    if validate_not_empty(df_books) or validate_not_empty(df_patrons) or validate_not_empty(df_loans):
         raise ValueError("No data extracted.")
     
     return True
@@ -116,9 +115,9 @@ def data_quality_check():
     True
         If all data quality checks pass.
     """
-    df_books   = pd.read_csv(RAW_FOLDER + '/books.csv')
-    df_patrons = pd.read_csv(RAW_FOLDER + '/patrons.csv')
-    df_loans   = pd.read_csv(RAW_FOLDER + '/loans.csv')
+    df_books   = pd.read_csv(STAGING_FOLDER + '/books.csv')
+    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
+    df_loans   = pd.read_csv(STAGING_FOLDER + '/loans.csv')
 
     run_data_quality_checks(df_books, 'books')
     run_data_quality_checks(df_patrons, 'patrons')
@@ -144,15 +143,15 @@ def data_cleaning():
     -------
     None
     """
-    df_books   = pd.read_csv(RAW_FOLDER + '/books.csv')
-    df_patrons = pd.read_csv(RAW_FOLDER + '/patrons.csv')
-    df_loans   = pd.read_csv(RAW_FOLDER + '/loans.csv')
+    df_books   = pd.read_csv(STAGING_FOLDER + '/books.csv')
+    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
+    df_loans   = pd.read_csv(STAGING_FOLDER + '/loans.csv')
 
     perform_data_cleaning(df_books, df_patrons, df_loans)
 
 with DAG(
     dag_id='etl_to_datamart_552518',
-    schedule=timedelta(seconds=30),
+    schedule=timedelta(seconds=30), # TODO: change this as needed
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags={'example'},
@@ -208,9 +207,9 @@ with DAG(
         python_callable=data_cleaning,
     )
 
-    create_dim_tables = PythonOperator(
-        task_id='create_dim_tables',
-        python_callable=create_dim_tables,
-    )
+    # create_dim_tables = PythonOperator(
+    #     task_id='create_dim_tables',
+    #     python_callable=create_dim_tables,
+    # )
 
     [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning

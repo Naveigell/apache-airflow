@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_NAME = os.path.dirname(os.path.abspath(__file__)) + '/../databases/' + os.getenv('DATABASE_NAME')
+DB_NAME = os.path.dirname(os.path.abspath(__file__)) + '/../data/raw/' + os.getenv('DATABASE_NAME')
 
-def extract_data_from_source(db_table):
+def extract_data_from_source(db_table, create_if_not_exists=False):
     """
     Extract data from a SQLite database table.
 
@@ -22,6 +22,11 @@ def extract_data_from_source(db_table):
     data : pandas.DataFrame
         DataFrame containing the extracted data.
     """
+
+    if create_if_not_exists and not os.path.exists(DB_NAME):
+        os.open(DB_NAME, os.O_CREAT)
+        print(f"Created directory: {DB_NAME}")
+
     conn = sqlite3.connect(DB_NAME)
 
     data = pd.read_sql_query("SELECT * FROM " + db_table, conn)

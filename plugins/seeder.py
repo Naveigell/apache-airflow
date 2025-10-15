@@ -1,4 +1,3 @@
-import pandas as pd
 import sqlite3
 import random
 import os
@@ -10,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Konfigurasi ---
-DB_NAME = os.path.dirname(os.path.abspath(__file__)) + '/../databases/' + os.getenv('DATABASE_NAME')
+DB_NAME = os.path.dirname(os.path.abspath(__file__)) + '/../data/raw/' + os.getenv('DATABASE_NAME')
 
 
 # Jumlah Record (Total Records: 500 + 500 + 1500 = 2500 records, > 2000)
@@ -177,9 +176,14 @@ if __name__ == '__main__':
     # Hapus file database lama jika ada
     if os.path.exists(DB_NAME):
         os.remove(DB_NAME)
-        print(f"Removed existing database file: {DB_NAME}")
 
-    print("--- Starting Synthetic Data Generation (Snake Case) ---")
+        print(f"Removed existing database file: {DB_NAME}")
+    else:
+        os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
+
+        print(f"Created new database file: {DB_NAME}")
+
+    print("Synthetic data generation success.")
 
     # 1. Generate Data in Memory
     books = generate_books(NUM_BOOKS)

@@ -7,10 +7,11 @@ load_dotenv()
 
 # --- Konfigurasi Folder ---
 # Variabel lingkungan sudah dimuat sebelumnya di DAG
-FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/../../data/'
-STAGING_DATABASE = FOLDER + 'staging/' + os.getenv('STAGING_DATABASE')
-DATAMART_DATABASE = FOLDER + 'datamart/' + os.getenv('DATAMART_DATABASE')
-DATAMART_TABLE_NAME = 'staging_data'  # Nama tabel di database staging
+
+FOLDER              = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
+STAGING_DATABASE    = FOLDER + 'staging/' + os.getenv('STAGING_DATABASE')
+DATAMART_DATABASE   = FOLDER + 'datamart/' + os.getenv('DATAMART_DATABASE')
+DATAMART_TABLE_NAME = 'staging_data'
 
 
 def get_db_connection(db_path):
