@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Konfigurasi Folder ---
-# Variabel lingkungan sudah dimuat sebelumnya di DAG
-
 FOLDER              = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
 STAGING_DATABASE    = FOLDER + 'staging/' + os.getenv('STAGING_DATABASE')
 DATAMART_DATABASE   = FOLDER + 'datamart/' + os.getenv('DATAMART_DATABASE')
@@ -15,126 +12,350 @@ DATAMART_TABLE_NAME = 'staging_data'
 
 
 def get_db_connection(db_path):
-    """Membuka koneksi SQLite."""
+    """
+    Returns a connection to a SQLite database at the given path.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+
+    Returns
+    -------
+    sqlite3.Connection
+        A connection to the SQLite database.
+    """
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
     return sqlite3.connect(db_path)
 
 
-def create_dim_date(conn):
+def save_dataframe_into_sqlite(df, db_path, table_name, if_exists = 'replace'):
     """
-    Task 8: Membuat Dim_Date (Wajib) dari tanggal yang ada di Staging.
-    Membuat rentang 365 hari ke depan dari tanggal hari ini untuk completeness.
+    Save a pandas DataFrame into a SQLite database.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame containing the data to save.
+    db_path : str
+        Path to the SQLite database file.
+    table_name : str
+        Name of the table to save the data into.
+    if_exists : str, optional
+        How to behave if the table already exists. Default is 'replace'.
+
+    Notes
+    -----
+    - This function will create the database file if it does not exist.
+    - This function will raise an exception if there is an error while saving the data.
     """
-    print("-> Creating Dim_Date...")
+    conn = None
+    try:
+        conn = get_db_connection(db_path)
 
-    # Ambil semua tanggal unik (loan, due, return, membership, publication) dari Staging
-    conn_staging = get_db_connection(STAGING_DATABASE)
-    query = f"SELECT loan_timestamp, due_date, return_date, membership_date FROM {DATAMART_TABLE_NAME}"
-    df_staging = pd.read_sql(query, conn_staging)
-    conn_staging.close()
+        df.to_sql(table_name, conn, if_exists=if_exists, index=False)
+    except Exception as e:
+        raise ValueError (f"SQlite error in ({table_name}): {e}")
+    finally:
+        if conn:
+            conn.close()
 
-    # Kumpulkan semua tanggal unik dan ubah ke format YYYY-MM-DD
-    all_dates = pd.concat([
-        pd.to_datetime(df_staging['loan_timestamp']).dt.normalize(),
-        pd.to_datetime(df_staging['due_date']),
-        pd.to_datetime(df_staging['return_date']),
-        pd.to_datetime(df_staging['membership_date']),
+
+def create_dim_date(conn, df_staging):
+
+    """
+    Create a Dim_Date table in the data mart database.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database file.
+    df_staging : pandas.DataFrame
+        DataFrame containing the staging data
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the Dim_Date table data
+    """
+    all_dates = pd.concat([ # create date from staging data and make it unique
+        pd.to_datetime(df_staging['loan_timestamp'], errors='coerce').dt.normalize(),
+        pd.to_datetime(df_staging['due_date'], errors='coerce'),
+        pd.to_datetime(df_staging['return_date'], errors='coerce'),
+        pd.to_datetime(df_staging['membership_date'], errors='coerce'),
     ]).dropna().unique()
 
-    # Tambahkan rentang tanggal dari tanggal paling awal hingga 1 tahun dari sekarang
-    min_date = pd.to_datetime(all_dates).min() if len(all_dates) > 0 else pd.Timestamp('2023-01-01')
+    # create date ranges from year now to year now + 1
+    min_date = pd.to_datetime(all_dates).min() if len(all_dates) > 0 else pd.Timestamp('2025-01-01')
     max_date = pd.Timestamp.today() + pd.DateOffset(years=1)
-
     date_range = pd.date_range(start=min_date, end=max_date, freq='D')
 
+    # and then create dataframe by the date range
     df_date = pd.DataFrame({'date': date_range})
-
-    # Membuat kolom Dimensi Waktu
     df_date['date_key'] = (df_date['date'].dt.strftime('%Y%m%d')).astype(int)
     df_date['full_date'] = df_date['date'].dt.date
     df_date['year'] = df_date['date'].dt.year
-    df_date['quarter'] = df_date['date'].dt.quarter
     df_date['month'] = df_date['date'].dt.month
-    df_date['day'] = df_date['date'].dt.day
     df_date['day_name'] = df_date['date'].dt.day_name()
     df_date['is_weekend'] = (df_date['date'].dt.dayofweek >= 5).astype(int)
 
-    # Pilih kolom akhir
-    df_date = df_date[['date_key', 'full_date', 'year', 'quarter', 'month', 'day', 'day_name', 'is_weekend']]
+    # create default unknown date
+    unknown_date = pd.DataFrame({
+        'date_key': [-1],
+        'full_date': [None],
+        'year': [None],
+        'month': [None],
+        'day_name': ['Unknown'],
+        'is_weekend': [None]
+    })
 
-    # Load ke Datamart
-    df_date.to_sql('Dim_Date', conn, if_exists='replace', index=False)
-    print(f"-> Dim_Date created with {len(df_date)} records.")
-    return df_date[['date_key', 'full_date']]  # Hanya kembalikan subset yang diperlukan untuk FK
+    # and then concat unknown date to the dataframe
+    df_date = pd.concat([unknown_date, df_date], ignore_index=True)
+
+    # save dataframe into datamart
+    save_dataframe_into_sqlite(df_date, DATAMART_DATABASE, 'Dim_Date', if_exists='replace')
+
+    return df_date[['date_key', 'full_date', 'year', 'month']]
 
 
 def create_dim_book_patron(conn, df_staging):
     """
-    Task 8: Membuat Dim_Book dan Dim_Patron (SCD Type 1).
+    Create Dim_Book and Dim_Patron tables in the data mart database.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database file.
+    df_staging : pandas.DataFrame
+        DataFrame containing the staging data
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the Dim_Book and Dim_Patron table data
     """
-
-    # ------------------ DIM_BOOK ------------------
-    print("-> Creating Dim_Book (SCD Type 1)...")
-    df_book = df_staging[['book_id', 'book_title', 'genre']].drop_duplicates().reset_index(drop=True)
-
-    # Membuat Surrogate Key (dihitung dari index + 1)
+    # drop duplicate book_id, book_title and genre, and then increment book key
+    df_book = df_staging[['book_id', 'book_title', 'genre']].drop_duplicates(subset=['book_id']).reset_index(drop=True)
     df_book['book_key'] = df_book.index + 1
-
-    # Pembersihan nama kolom dan penempatan kunci
+    # now take only the 'book_key', 'book_id', 'book_title' and 'genre'
     df_book = df_book[['book_key', 'book_id', 'book_title', 'genre']]
-    df_book.to_sql('Dim_Book', conn, if_exists='replace', index=False)
-    print(f"-> Dim_Book created with {len(df_book)} records.")
 
-    # ------------------ DIM_PATRON ------------------
-    print("-> Creating Dim_Patron (SCD Type 1)...")
-    df_patron = df_staging[['patron_id', 'patron_name', 'membership_date']].drop_duplicates().reset_index(drop=True)
+    # and then save into sqlite datamart with replace if exists
+    save_dataframe_into_sqlite(df_book, DATAMART_DATABASE, 'Dim_Book', if_exists='replace')
 
-    # Membuat Surrogate Key
+    # do the same for patron
+    df_patron = df_staging[['patron_id', 'patron_name', 'membership_date']].drop_duplicates(subset=['patron_id']).reset_index(drop=True)
     df_patron['patron_key'] = df_patron.index + 1
-
-    # Pembersihan nama kolom dan penempatan kunci
     df_patron = df_patron[['patron_key', 'patron_id', 'patron_name', 'membership_date']]
-    df_patron.to_sql('Dim_Patron', conn, if_exists='replace', index=False)
-    print(f"-> Dim_Patron created with {len(df_patron)} records.")
 
-    # Mengembalikan DataFrames dimensi untuk Task 9
+    # and then save into sqlite datamart with replace if exists
+    save_dataframe_into_sqlite(df_patron, DATAMART_DATABASE, 'Dim_Patron', if_exists='replace')
+
+    # return only the 'book_key' and 'patron_key' with 'book_id' and 'patron_id'
     return df_book[['book_key', 'book_id']], df_patron[['patron_key', 'patron_id']]
+
+
+def create_fact_loan_transactions(conn, df_staging, df_dim_book, df_dim_patron, df_dim_date):
+    """
+    Create the Fact_Loan_Transactions table in the data mart database.
+
+    This function takes the staging data, Dim_Book, Dim_Patron, and Dim_Date tables, and
+    creates the Fact_Loan_Transactions table in the data mart database.
+
+    It first creates copies of the staging data, and then performs the following operations:
+
+    * Converts the loan_timestamp, due_date, and return_date columns to datetime objects
+    * Creates a loan_count column with a value of 1
+    * Creates a return_date_filled column that fills NaN values with the current date
+    * Creates a days_loaned column that calculates the difference between the return_date_filled and loan_timestamp columns
+    * Creates an is_overdue column that marks a row as overdue if the return_date is greater than the due_date and the status is 'Returned' or 'Overdue'
+    * Creates a loan_date_key, due_date_key, and return_date_key column by applying the get_date_key function to the loan_timestamp, due_date, and return_date columns, respectively
+    * Merges the Dim_Book and Dim_Patron tables into the staging data
+    * Selects the required columns and saves the result into the Fact_Loan_Transactions table in the data mart database
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database file.
+    df_staging : pandas.DataFrame
+        DataFrame containing the staging data.
+    df_dim_book : pandas.DataFrame
+        DataFrame containing the Dim_Book table data.
+    df_dim_patron : pandas.DataFrame
+        DataFrame containing the Dim_Patron table data.
+    df_dim_date : pandas.DataFrame
+        DataFrame containing the Dim_Date table data.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the Fact_Loan_Transactions table data
+    """
+    df_loans_fact = df_staging[
+        ['loan_id', 'book_id', 'patron_id', 'loan_timestamp', 'due_date', 'return_date', 'status']
+    ].copy()
+
+    df_loans_fact['loan_timestamp'] = pd.to_datetime(df_loans_fact['loan_timestamp'], errors='coerce')
+    df_loans_fact['due_date'] = pd.to_datetime(df_loans_fact['due_date'], errors='coerce')
+    df_loans_fact['return_date'] = pd.to_datetime(df_loans_fact['return_date'], errors='coerce')
+
+    df_loans_fact['loan_count'] = 1
+    df_loans_fact['return_date_filled'] = df_loans_fact['return_date'].fillna(pd.Timestamp.now().normalize())
+    df_loans_fact['days_loaned'] = (df_loans_fact['return_date_filled'] - df_loans_fact['loan_timestamp']).dt.days
+
+    returned_overdue = (df_loans_fact['return_date'] > df_loans_fact['due_date']) & (df_loans_fact['status'] == 'Returned')
+    active_overdue = (df_loans_fact['status'] == 'Overdue')
+    df_loans_fact['is_overdue'] = (returned_overdue | active_overdue).astype(int)
+
+    df_loans_fact = df_loans_fact.merge(df_dim_book, on='book_id', how='left')
+    df_loans_fact = df_loans_fact.merge(df_dim_patron, on='patron_id', how='left')
+
+    df_loans_fact['loan_date_key'] = df_loans_fact['loan_timestamp'].apply(get_date_key)
+    df_loans_fact['due_date_key'] = df_loans_fact['due_date'].apply(get_date_key)
+    df_loans_fact['return_date_key'] = df_loans_fact['return_date'].apply(get_date_key)
+
+    fact_columns = [
+        'loan_id', 'book_key', 'patron_key',
+        'loan_date_key', 'due_date_key', 'return_date_key',
+        'loan_count', 'days_loaned', 'is_overdue', 'status'
+    ]
+
+    df_fact = df_loans_fact[fact_columns].copy()
+
+    save_dataframe_into_sqlite(df_fact, DATAMART_DATABASE, 'Fact_Loan_Transactions', if_exists='replace')
+
+    return df_fact
+
+
+def get_date_key(x):
+    """
+    Return an integer representing the date key (YYYYMMDD) of the given datetime object x.
+
+    If x is null, return -1.
+
+    Parameters
+    ----------
+    x : datetime
+        The datetime object to get the date key from.
+
+    Returns
+    -------
+    int
+        The date key of the given datetime object x.
+    """
+    return int(x.strftime('%Y%m%d')) if pd.notnull(x) else -1
+
+
+def create_loan_performance_mart(conn, df_fact, df_dim_date):
+    """
+    Create the Loan_Performance_Mart table in the data mart database.
+
+    This function takes the fact table and Dim_Date table, and creates the Loan_Performance_Mart table in the data mart database.
+    It first merges the fact table with the Dim_Date table on the loan_date_key column, and then groups the result by book_key, year, and month.
+    It then calculates the total_loans, avg_days_loaned, total_overdue, and monthly_overdue_rate columns for each group.
+    Finally, it saves the result into the Loan_Performance_Mart table in the data mart database.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database file.
+    df_fact : pandas.DataFrame
+        DataFrame containing the fact table data.
+    df_dim_date : pandas.DataFrame
+        DataFrame containing the Dim_Date table data.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the Loan_Performance_Mart table data.
+    """
+    df_fact = df_fact.merge(
+        df_dim_date[['date_key', 'year', 'month']],
+        left_on='loan_date_key', right_on='date_key', how='left', suffixes=('', '_loan_date')
+    )
+
+    df_loan_mart = df_fact.groupby(['book_key', 'year', 'month']).agg(
+        total_loans=('loan_count', 'sum'),
+        avg_days_loaned=('days_loaned', 'mean'),
+        total_overdue=('is_overdue', 'sum')
+    ).reset_index()
+
+    df_loan_mart['monthly_overdue_rate'] = (df_loan_mart['total_overdue'] / df_loan_mart['total_loans']).fillna(0)
+
+    save_dataframe_into_sqlite(df_loan_mart, DATAMART_DATABASE, 'Loan_Performance_Mart', if_exists='replace')
+
+
+def create_monthly_kpi_summary(conn, df_fact, df_dim_date):
+    """
+    Create the Monthly_KPI_Summary table in the data mart database.
+
+    This function takes the fact table and Dim_Date table, and creates the Monthly_KPI_Summary table in the data mart database.
+    It first merges the fact table with the Dim_Date table on the loan_date_key column, and then groups the result by year and month.
+    It then calculates the monthly_loan_volume, avg_loan_duration_system, total_overdue_volume, and overdue_rate_kpi columns for each group.
+    Finally, it saves the result into the Monthly_KPI_Summary table in the data mart database.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Connection to the SQLite database file.
+    df_fact : pandas.DataFrame
+        DataFrame containing the fact table data.
+    df_dim_date : pandas.DataFrame
+        DataFrame containing the Dim_Date table data.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the Monthly_KPI_Summary table data.
+    """
+    df_fact = df_fact.merge(
+        df_dim_date[['date_key', 'year', 'month']],
+        left_on='loan_date_key', right_on='date_key', how='left', suffixes=('', '_loan_date')
+    )
+
+    df_kpi = df_fact.groupby(['year', 'month']).agg(
+        monthly_loan_volume=('loan_count', 'sum'),
+        avg_loan_duration_system=('days_loaned', 'mean'),
+        total_overdue_volume=('is_overdue', 'sum')
+    ).reset_index()
+
+    df_kpi['overdue_rate_kpi'] = (df_kpi['total_overdue_volume'] / df_kpi['monthly_loan_volume']).fillna(0)
+
+    save_dataframe_into_sqlite(df_kpi, DATAMART_DATABASE, 'Monthly_KPI_Summary', if_exists='replace')
 
 
 def datamart_build_pipeline():
     """
-    Mengkoordinasikan Task 8 (Dimensi) dan Task 9 (Fakta).
-    Dipanggil oleh PythonOperator di DAG.
-    """
-    print("\n==============================================")
-    print("STAGE 3: Starting Dimensional Modeling (Task 8 & 9)")
-    print("==============================================")
+    Builds the data mart by reading from the staging database, creating the Dim tables, fact table, and then creating the Loan_Performance_Mart and Monthly_KPI_Summary tables.
 
-    # 1. Ambil data staging yang bersih
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
     conn_staging = get_db_connection(STAGING_DATABASE)
-    query = f"SELECT * FROM {DATAMART_TABLE_NAME}"
-    df_staging = pd.read_sql(query, conn_staging)
+    df_staging = pd.read_sql(f"SELECT * FROM {DATAMART_TABLE_NAME}", conn_staging)
     conn_staging.close()
 
     if df_staging.empty:
-        print("Staging data is empty. Skipping Data Mart build.")
-        return
+        raise ValueError("Staging data is empty. Skipping Data Mart build.")
 
-    # 2. Buka koneksi ke Datamart
     conn_datamart = get_db_connection(DATAMART_DATABASE)
 
-    # --- Task 8: CREATE DIMENSION TABLES ---
-
-    # Dim_Date
-    df_dim_date = create_dim_date(conn_datamart)
-
-    # Dim_Book dan Dim_Patron
+    # create dimension date table, book and patron
+    df_dim_date                = create_dim_date(conn_datamart, df_staging)
     df_dim_book, df_dim_patron = create_dim_book_patron(conn_datamart, df_staging)
 
-    # --- Task 9: CREATE FACT TABLE ---
-    # (Logika Task 9 akan ditambahkan di sini pada langkah berikutnya)
+    # create fact loan transaction
+    df_fact = create_fact_loan_transactions(conn_datamart, df_staging, df_dim_book, df_dim_patron, df_dim_date)
+
+    # create loan performance and monthly kpi summary
+    create_loan_performance_mart(conn_datamart, df_fact, df_dim_date)
+    create_monthly_kpi_summary(conn_datamart, df_fact, df_dim_date)
 
     conn_datamart.close()
-    print("Dimensional Model Build (Task 8) COMPLETE.")
 
-# Task 9 create_fact_table akan ditambahkan di sini.

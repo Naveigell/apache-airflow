@@ -36,7 +36,9 @@ def notify_failure(context):
     -------
     None
     """
-    with open('logs/log_' + datetime.today().strftime('%Y%m%d%H%M%S') + '.txt', 'w') as f:
+    os.makedirs('logs/', exist_ok=True) # make sure logs folder exists
+
+    with open('logs/log_' + datetime.today().strftime('%Y%m%d') + '.txt', 'w') as f:
         f.write('Task failed : ' + str(context['reason']))
 
 
@@ -124,7 +126,7 @@ def data_quality_check():
 
     return True
 
-def create_dim_tables():
+def build_pipeline_for_datamart():
     datamart_build_pipeline()
 
 def data_cleaning():
@@ -208,7 +210,7 @@ with DAG(
 
     create_dim_tables = PythonOperator(
         task_id='create_dim_tables',
-        python_callable=create_dim_tables,
+        python_callable=build_pipeline_for_datamart,
     )
 
-    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning
+    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning >> build_pipeline_for_datamart

@@ -2,50 +2,43 @@ import pandas as pd
 
 
 def run_data_quality_checks(df, table_name):
-    """
-    Task 6: Implement minimal 5 quality checks on the data.
-    If any check fails, it raises DataQualityError to stop the pipeline.
-    """
-    print(f"\n--- Starting Data Quality Check for {table_name} ---")
-
     errors = []
 
-    # 1. Null Value Check for critical columns
     critical_cols = {
         'books': ['book_id', 'title', 'author', 'total_copies'],
         'patrons': ['patron_id', 'name', 'membership_date'],
         'loans': ['loan_id', 'book_id', 'patron_id', 'loan_timestamp', 'due_date', 'status']
     }.get(table_name, [])
 
+    # check every column that have NULL value
     for col in critical_cols:
         if df[col].isnull().any():
-            errors.append(f"1. Null Check FAILED: Critical column '{col}' has NULL values.")
+            errors.append(f"There is NULL values in '{col}' column.")
 
-    # 2. Data Type Validation (Minimal: Check key types)
-    # Note: Pandas Dtype 'object' is often used for strings/mixed types read from CSV/SQL.
     id_col = f'{table_name[:-1]}_id' if table_name != 'books' else 'book_id'
+
+    # the primary key should be string or object
     if id_col in df.columns:
         if not pd.api.types.is_string_dtype(df[id_col].dtype):
-            # This check is often complex due to default Pandas inference, but we check if it's not numeric
             if pd.api.types.is_numeric_dtype(df[id_col].dtype):
-                errors.append(f"2. Data Type FAILED: Primary Key '{id_col}' should be string/object but is numeric.")
+                errors.append(f"Primary key in '{id_col}' should be string or object but got numeric.")
 
-    # 3. Duplicate Records Check (Based on Primary Key)
+    # check if column has duplicate value
     if id_col in df.columns:
         if df[id_col].duplicated().any():
-            errors.append(f"3. Duplicate Check FAILED: Duplication found on Primary Key '{id_col}'.")
+            errors.append(f"Duplicate primary key in '{id_col}'.")
 
-    # 4. Range/Boundary Check (Example: total_copies cannot be negative)
+    # check if total_copies is negative
     if 'total_copies' in df.columns:
         if (df['total_copies'] < 0).any():
-            errors.append("4. Range Check FAILED: 'total_copies' contains negative values.")
+            errors.append("The total copies could not lower than 0")
 
-    # 5. Referential Integrity Check (Intrinsic value check - statuses must be valid)
-    # The external FK check (joining) is done during Task 7 cleanup.
+    # check if status is in valid statuses
     if 'status' in df.columns:
         valid_statuses = ['Returned', 'On Loan', 'Overdue']
+
         if not df['status'].isin(valid_statuses).all():
-            errors.append("5. Referential Integrity (Value) FAILED: 'status' contains invalid values.")
+            errors.append("There is invalid status in 'status' column.")
 
     if errors:
         print("\n--- DATA QUALITY CHECK FAILED! Stopping Pipeline ---")

@@ -8,6 +8,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def transform_data(df_books, df_patrons, df_loans):
+    """
+    Transforms the staging data into a format suitable for the data mart.
+
+    This function takes the staging data, merges the books and patrons data into the loans
+    data, converts the timestamp columns into datetime objects, fills the return_date
+    column with the current date if it is null, calculates the duration days, and
+    creates a new boolean column to mark late returns.
+
+    Parameters
+    ----------
+    df_books : pandas.DataFrame
+        DataFrame containing the staging data for books.
+    df_patrons : pandas.DataFrame
+        DataFrame containing the staging data for patrons.
+    df_loans : pandas.DataFrame
+        DataFrame containing the staging data for loans.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing the transformed data.
+    """
     # merge df_loans and df_books by its book_id
     df_transformed = pd.merge(df_loans, df_books[['book_id', 'title', 'genre', 'author']],
                               on='book_id', how='left')

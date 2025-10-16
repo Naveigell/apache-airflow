@@ -37,19 +37,22 @@ def validate_row_counts(dataframe, count):
 
     return True
 
+
 def validate_not_empty(dataframe):
     """
     Validate that a DataFrame is not empty.
 
-    Raises a ValueError if the DataFrame is empty.
+    Returns True if the DataFrame is empty, False otherwise.
 
     Parameters
     ----------
     dataframe : pandas.DataFrame
         The DataFrame to validate.
 
+    Returns
+    -------
+    bool
+        True if the DataFrame is empty, False otherwise.
     """
-    if len(dataframe) == 0:
-        raise ValueError("DataFrame is empty.")
 
-    return True
+    return len(dataframe) == 0
