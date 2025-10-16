@@ -402,6 +402,61 @@ def get_df_staging():
     return df_staging
 
 
+def create_datamart():
+    """
+    Creates the data mart by reading data from the fact and dimension tables, creating the loan performance and monthly kpi summary tables, and saving the result into the data mart database.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    None
+
+    """
+    conn_datamart = get_db_connection(DATAMART_DATABASE)
+
+    df_fact = pd.read_sql(f"SELECT * FROM Fact_Loan_Transactions", conn_datamart)
+    df_dim_date = pd.read_sql(f"SELECT * FROM Dim_Date", conn_datamart)
+
+    # create loan performance mart
+    create_loan_performance_mart(conn_datamart, df_fact, df_dim_date)
+
+    conn_datamart.close()
+
+def create_summary_stats():
+    """
+    Creates the monthly KPI summary table in the data mart database.
+
+    Reads the data from the Fact_Loan_Transactions and Dim_Date tables, creates the monthly KPI summary table by calling the create_monthly_kpi_summary function, and saves the result into the data mart database.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    None
+    """
+    conn_datamart = get_db_connection(DATAMART_DATABASE)
+
+    df_fact = pd.read_sql(f"SELECT * FROM Fact_Loan_Transactions", conn_datamart)
+    df_dim_date = pd.read_sql(f"SELECT * FROM Dim_Date", conn_datamart)
+
+    # create kpi summary
+    create_monthly_kpi_summary(conn_datamart, df_fact, df_dim_date)
+
+    conn_datamart.close()
+
 def remove_temporary_file(file_name):
     """
     Removes a temporary file from the data mart temporary folder.

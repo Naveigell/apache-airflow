@@ -12,12 +12,15 @@ from datetime import datetime, timedelta
 
 from airflow.sdk import DAG
 
-from scripts.extract   import extract_data_from_source
-from scripts.utils     import save_data_into_csv, save_dataframe_into_sqlite
-from scripts.transform import transform_data
-from scripts.clean     import run_data_quality_checks, perform_data_cleaning
-from scripts.datamart  import create_dim_tables as scripts_create_dim_tables, create_fact_tables as scripts_create_fact_tables
-from scripts.validate  import validate_not_empty
+from scripts.extract              import extract_data_from_source
+from scripts.utils                import save_data_into_csv, save_dataframe_into_sqlite
+from scripts.transform            import transform_data
+from scripts.clean                import run_data_quality_checks, perform_data_cleaning
+from scripts.datamart             import create_dim_tables as scripts_create_dim_tables, create_fact_tables as scripts_create_fact_tables, create_datamart, create_summary_stats as summary_stats
+from scripts.datamart_validation  import validate_datamart as validation_validate_datamart
+from scripts.metrics              import generate_report as metrics_generate_report
+from scripts.notification         import send_notification as notification_send_notification
+from scripts.validate             import validate_not_empty
 
 FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
 STAGING_FOLDER   = FOLDER + os.getenv('STAGING_FOLDER')
@@ -258,6 +261,33 @@ with DAG(
     )
 
     # TASK 10
+    create_datamart_library = PythonOperator(
+        task_id='create_datamart_library',
+        python_callable=create_datamart,
+    )
 
+    # TASK 11
+    create_summary_stats = PythonOperator(
+        task_id='create_summary_stats',
+        python_callable=summary_stats,
+    )
 
-    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning >> create_dim_tables >> create_fact_tables
+    # TASK 12
+    validate_data_mart = PythonOperator(
+        task_id='validate_data_mart',
+        python_callable=validation_validate_datamart,
+    )
+
+    # TASK 13
+    generate_report = PythonOperator(
+        task_id='generate_report',
+        python_callable=metrics_generate_report,
+    )
+
+    # TASK 14
+    send_notification = PythonOperator(
+        task_id='send_notification',
+        python_callable=notification_send_notification,
+    )
+
+    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning >> create_dim_tables >> create_fact_tables >> create_datamart_library >> create_summary_stats >> validate_data_mart >> [generate_report, send_notification]
