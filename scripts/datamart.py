@@ -3,12 +3,16 @@ import sqlite3
 import os
 from dotenv import load_dotenv
 
+from scripts.utils import save_data_into_csv
+
 load_dotenv()
 
 FOLDER              = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
 STAGING_DATABASE    = FOLDER + 'staging/' + os.getenv('STAGING_DATABASE')
 DATAMART_DATABASE   = FOLDER + 'datamart/' + os.getenv('DATAMART_DATABASE')
 DATAMART_TABLE_NAME = 'staging_data'
+
+DATAMART_TEMPORARY_FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/../data/' + os.getenv('DATAMART_FOLDER') + '/temp'
 
 
 def get_db_connection(db_path):
@@ -325,9 +329,28 @@ def create_monthly_kpi_summary(conn, df_fact, df_dim_date):
     save_dataframe_into_sqlite(df_kpi, DATAMART_DATABASE, 'Monthly_KPI_Summary', if_exists='replace')
 
 
-def datamart_build_pipeline():
+def create_fact_tables():
+    conn_datamart = get_db_connection(DATAMART_DATABASE)
+
+    df_staging = get_df_staging()
+
+    df_dim_book   = pd.read_csv(DATAMART_TEMPORARY_FOLDER + '/dim_book.csv')
+    df_dim_patron = pd.read_csv(DATAMART_TEMPORARY_FOLDER + '/dim_patron.csv')
+    df_dim_date   = pd.read_csv(DATAMART_TEMPORARY_FOLDER + '/dim_date.csv')
+
+    create_fact_loan_transactions(conn_datamart, df_staging, df_dim_book, df_dim_patron, df_dim_date)
+
+    conn_datamart.close()
+
+    remove_temporary_file('dim_book.csv')
+    remove_temporary_file('dim_patron.csv')
+    remove_temporary_file('dim_date.csv')
+
+def create_dim_tables():
     """
-    Builds the data mart by reading from the staging database, creating the Dim tables, fact table, and then creating the Loan_Performance_Mart and Monthly_KPI_Summary tables.
+    Creates the dimension tables for the data mart.
+
+    Reads the data from the staging database, creates the dimension tables (Dim_Date, Dim_Book, Dim_Patron) and saves them into CSV files in the data mart folder.
 
     Parameters
     ----------
@@ -337,12 +360,7 @@ def datamart_build_pipeline():
     -------
     None
     """
-    conn_staging = get_db_connection(STAGING_DATABASE)
-    df_staging = pd.read_sql(f"SELECT * FROM {DATAMART_TABLE_NAME}", conn_staging)
-    conn_staging.close()
-
-    if df_staging.empty:
-        raise ValueError("Staging data is empty. Skipping Data Mart build.")
+    df_staging = get_df_staging()
 
     conn_datamart = get_db_connection(DATAMART_DATABASE)
 
@@ -350,12 +368,52 @@ def datamart_build_pipeline():
     df_dim_date                = create_dim_date(conn_datamart, df_staging)
     df_dim_book, df_dim_patron = create_dim_book_patron(conn_datamart, df_staging)
 
-    # create fact loan transaction
-    df_fact = create_fact_loan_transactions(conn_datamart, df_staging, df_dim_book, df_dim_patron, df_dim_date)
-
-    # create loan performance and monthly kpi summary
-    create_loan_performance_mart(conn_datamart, df_fact, df_dim_date)
-    create_monthly_kpi_summary(conn_datamart, df_fact, df_dim_date)
-
     conn_datamart.close()
 
+    save_data_into_csv(df_dim_date, 'dim_date.csv', DATAMART_TEMPORARY_FOLDER)
+    save_data_into_csv(df_dim_book, 'dim_book.csv', DATAMART_TEMPORARY_FOLDER)
+    save_data_into_csv(df_dim_patron, 'dim_patron.csv', DATAMART_TEMPORARY_FOLDER)
+
+def get_df_staging():
+    """
+    Gets the staging data from the staging database.
+
+    Reads the data from the staging database, checks if the data is not empty,
+    and then returns the staging data as a pandas DataFrame.
+
+    Raises
+    ------
+    ValueError
+        If the staging data is empty.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The staging data as a pandas DataFrame.
+    """
+    conn_staging = get_db_connection(STAGING_DATABASE)
+    df_staging = pd.read_sql(f"SELECT * FROM {DATAMART_TABLE_NAME}", conn_staging)
+
+    if df_staging.empty:
+        raise ValueError("Staging data is empty. Skipping Data Mart build.")
+
+    conn_staging.close()
+
+    return df_staging
+
+
+def remove_temporary_file(file_name):
+    """
+    Removes a temporary file from the data mart temporary folder.
+
+    Parameters
+    ----------
+    file_name : str
+        The name of the file to be removed.
+
+    Returns
+    -------
+    None
+    """
+    if os.path.exists(DATAMART_TEMPORARY_FOLDER + '/' + file_name):
+        os.remove(DATAMART_TEMPORARY_FOLDER + '/' + file_name)

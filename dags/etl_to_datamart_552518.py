@@ -16,7 +16,7 @@ from scripts.extract   import extract_data_from_source
 from scripts.utils     import save_data_into_csv, save_dataframe_into_sqlite
 from scripts.transform import transform_data
 from scripts.clean     import run_data_quality_checks, perform_data_cleaning
-from scripts.datamart  import datamart_build_pipeline
+from scripts.datamart  import create_dim_tables as scripts_create_dim_tables, create_fact_tables as scripts_create_fact_tables
 from scripts.validate  import validate_not_empty
 
 FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
@@ -126,8 +126,45 @@ def data_quality_check():
 
     return True
 
-def build_pipeline_for_datamart():
-    datamart_build_pipeline()
+def create_dim_tables_for_datamart():
+    """
+    Creates the dimension tables for the data mart.
+
+    Calls the create_dim_tables function to create the dimension tables (Dim_Date, Dim_Book, Dim_Patron) and saves them into CSV files in the data mart folder.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+    scripts_create_dim_tables()
+
+def create_fact_tables_for_datamart():
+    """
+    Creates the fact tables for the data mart.
+
+    Reads the data from the staging database, creates the fact tables (Fact_Book_Loan, Fact_Patron_Loan) and saves them into CSV files in the data mart folder.
+
+    Parameters
+    ----------
+    df_staging : pandas.DataFrame
+        DataFrame containing the staging data.
+    df_dim_book : pandas.DataFrame
+        DataFrame containing the Dim_Book data.
+    df_dim_patron : pandas.DataFrame
+        DataFrame containing the Dim_Patron data.
+    df_dim_date : pandas.DataFrame
+        DataFrame containing the Dim_Date data.
+
+    Returns
+    -------
+    None
+    """
+    scripts_create_fact_tables()
+
 
 def data_cleaning():
     """
@@ -208,9 +245,19 @@ with DAG(
         python_callable=data_cleaning,
     )
 
+    # TASK 8
     create_dim_tables = PythonOperator(
         task_id='create_dim_tables',
-        python_callable=build_pipeline_for_datamart,
+        python_callable=create_dim_tables_for_datamart,
     )
 
-    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning >> build_pipeline_for_datamart
+    # TASK 9
+    create_fact_tables = PythonOperator(
+        task_id='create_fact_tables',
+        python_callable=create_fact_tables_for_datamart,
+    )
+
+    # TASK 10
+
+
+    [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning >> create_dim_tables >> create_fact_tables
