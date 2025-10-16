@@ -75,25 +75,25 @@ def create_dim_book_patron(conn, df_staging):
 
     # ------------------ DIM_BOOK ------------------
     print("-> Creating Dim_Book (SCD Type 1)...")
-    df_book = df_staging[['book_id', 'title', 'genre', 'total_copies']].drop_duplicates().reset_index(drop=True)
+    df_book = df_staging[['book_id', 'book_title', 'genre']].drop_duplicates().reset_index(drop=True)
 
     # Membuat Surrogate Key (dihitung dari index + 1)
     df_book['book_key'] = df_book.index + 1
 
     # Pembersihan nama kolom dan penempatan kunci
-    df_book = df_book[['book_key', 'book_id', 'title', 'genre', 'total_copies']]
+    df_book = df_book[['book_key', 'book_id', 'book_title', 'genre']]
     df_book.to_sql('Dim_Book', conn, if_exists='replace', index=False)
     print(f"-> Dim_Book created with {len(df_book)} records.")
 
     # ------------------ DIM_PATRON ------------------
     print("-> Creating Dim_Patron (SCD Type 1)...")
-    df_patron = df_staging[['patron_id', 'name', 'membership_date']].drop_duplicates().reset_index(drop=True)
+    df_patron = df_staging[['patron_id', 'patron_name', 'membership_date']].drop_duplicates().reset_index(drop=True)
 
     # Membuat Surrogate Key
     df_patron['patron_key'] = df_patron.index + 1
 
     # Pembersihan nama kolom dan penempatan kunci
-    df_patron = df_patron[['patron_key', 'patron_id', 'name', 'membership_date']]
+    df_patron = df_patron[['patron_key', 'patron_id', 'patron_name', 'membership_date']]
     df_patron.to_sql('Dim_Patron', conn, if_exists='replace', index=False)
     print(f"-> Dim_Patron created with {len(df_patron)} records.")
 

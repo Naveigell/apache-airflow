@@ -206,9 +206,9 @@ with DAG(
         python_callable=data_cleaning,
     )
 
-    # create_dim_tables = PythonOperator(
-    #     task_id='create_dim_tables',
-    #     python_callable=create_dim_tables,
-    # )
+    create_dim_tables = PythonOperator(
+        task_id='create_dim_tables',
+        python_callable=create_dim_tables,
+    )
 
     [save_raw_books, save_raw_patrons, save_raw_loans] >> validate_extraction >> load_into_staging >> data_quality_check >> data_cleaning
