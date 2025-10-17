@@ -13,14 +13,14 @@ from datetime import datetime, timedelta
 from airflow.sdk import DAG
 
 from scripts.extract              import extract_data_from_source
-from scripts.utils                import save_data_into_csv, save_dataframe_into_sqlite
-from scripts.transform            import transform_data
+from scripts.utils                import save_data_into_csv
 from scripts.clean                import run_data_quality_checks, perform_data_cleaning
 from scripts.datamart             import create_dim_tables as scripts_create_dim_tables, create_fact_tables as scripts_create_fact_tables, create_datamart, create_summary_stats as summary_stats
 from scripts.datamart_validation  import validate_datamart as validation_validate_datamart
 from scripts.metrics              import generate_report as metrics_generate_report
 from scripts.notification         import send_notification as notification_send_notification
 from scripts.validate             import validate_not_empty
+from scripts.load                 import load_into_staging as save_into_staging
 
 FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
 STAGING_FOLDER   = FOLDER + os.getenv('STAGING_FOLDER')
@@ -62,27 +62,6 @@ def extract_data_into(table, file_name):
     extracted = extract_data_from_source(table)
 
     save_data_into_csv(extracted, file_name)
-
-def save_into_staging():
-    """
-    Save transformed data into a CSV file in the staging folder.
-
-    This function reads three CSV files from the raw folder (books.csv, patrons.csv, loans.csv),
-    transforms the data using transform_data, and saves the result into a CSV file named
-    staging_data.csv in the staging folder.
-
-    Returns
-    -------
-    None
-    """
-
-    df_books   = pd.read_csv(STAGING_FOLDER + '/books.csv')
-    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
-    df_loans   = pd.read_csv(STAGING_FOLDER + '/loans.csv')
-
-    transformed = transform_data(df_books, df_patrons, df_loans)
-
-    save_dataframe_into_sqlite(transformed, STAGING_DATABASE, 'staging_data')
 
 def validate_extraction():
     """

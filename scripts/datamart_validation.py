@@ -28,6 +28,8 @@ def validate_datamart():
     conn_datamart = get_db_connection(DATAMART_DATABASE)
 
     counts = {}
+
+    # get the count from each table in datamart table
     for table in ["Dim_Book", "Dim_Patron", "Dim_Date", "Fact_Loan_Transactions"]:
         counts[table] = pd.read_sql(f"SELECT COUNT(*) AS count FROM {table}", conn_datamart).iloc[0, 0]
 
@@ -36,8 +38,10 @@ def validate_datamart():
     conn_staging.close()
     conn_datamart.close()
 
-    validations = {tbl: ("OK" if cnt > 0 else "EMPTY") for tbl, cnt in counts.items()}
+    # validate empty table
+    validations = {table: ("TABLE OK" if count > 0 else "TABLE EMPTY") for table, count in counts.items()}
 
+    # check if the fact table count is not greater than staging count data
     if counts["Fact_Loan_Transactions"] <= staging_count:
         validations["Fact_Loan_Transactions"] = "Row count is valid"
     else:
@@ -51,7 +55,7 @@ def validate_datamart():
 
     os.makedirs("logs/validation", exist_ok=True)
 
-    with open("logs/validation/datamart_validation_" + datetime.now().strftime("%Y%m%d") + ".log", "w") as f:
+    with open("logs/validation/datamart_" + datetime.now().strftime("%Y%m%d") + ".log", "w") as f:
         f.write(str(summary))
 
     return summary

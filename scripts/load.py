@@ -1,11 +1,16 @@
 # scripts/load.py
 import os
 
-import extract as extract
-import transform as transform
+import pandas as pd
 
-RAW_FOLDER = os.path.dirname(os.path.abspath(__file__)) + '/../DATA/' + os.getenv('RAW_FOLDER')
-OUTPUT_FILE = os.path.join(RAW_FOLDER, 'library_transformed_data.csv')
+from scripts.utils import save_dataframe_into_sqlite
+from transform import transform_data
+
+RAW_FOLDER       = os.path.dirname(os.path.abspath(__file__)) + '/../DATA/' + os.getenv('RAW_FOLDER')
+OUTPUT_FILE      = os.path.join(RAW_FOLDER, 'library_transformed_data.csv')
+FOLDER           = os.path.dirname(os.path.abspath(__file__)) + '/../data/'
+STAGING_FOLDER   = FOLDER + os.getenv('STAGING_FOLDER')
+STAGING_DATABASE = FOLDER + '/staging/' + os.getenv('STAGING_DATABASE')
 
 DB_NAME = os.path.dirname(os.path.abspath(__file__)) + '/../databases/' + os.getenv('DATABASE_NAME')
 
@@ -33,3 +38,28 @@ def load_data(df, output_file):
         os.makedirs(RAW_FOLDER)
 
     df.to_csv(output_file, index=False)
+
+
+def load_into_staging():
+    """
+    Load transformed data into the staging database.
+
+    This function reads the CSV files from the staging folder, transforms the data using the transform_data function,
+    and saves the result into the staging database.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    None
+    """
+    # Read the CSV files from the staging folder
+    df_books = pd.read_csv(STAGING_FOLDER + '/books.csv')
+    df_patrons = pd.read_csv(STAGING_FOLDER + '/patrons.csv')
+    df_loans = pd.read_csv(STAGING_FOLDER + '/loans.csv')
+
+    transformed = transform_data(df_books, df_patrons, df_loans)
+
+    save_dataframe_into_sqlite(transformed, STAGING_DATABASE, 'staging_data')

@@ -346,6 +346,8 @@ def create_fact_tables():
     remove_temporary_file('dim_patron.csv')
     remove_temporary_file('dim_date.csv')
 
+    os.removedirs(DATAMART_TEMPORARY_FOLDER)
+
 def create_dim_tables():
     """
     Creates the dimension tables for the data mart.
