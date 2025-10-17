@@ -4,7 +4,7 @@ import os
 import pandas as pd
 
 from scripts.utils import save_dataframe_into_sqlite
-from transform import transform_data
+from scripts.transform import transform_data
 
 RAW_FOLDER       = os.path.dirname(os.path.abspath(__file__)) + '/../DATA/' + os.getenv('RAW_FOLDER')
 OUTPUT_FILE      = os.path.join(RAW_FOLDER, 'library_transformed_data.csv')
