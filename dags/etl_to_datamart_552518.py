@@ -171,7 +171,7 @@ def data_cleaning():
 
 with DAG(
     dag_id='etl_to_datamart_552518',
-    schedule=timedelta(seconds=30), # TODO: change this as needed
+    schedule=timedelta(days=1),
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags={'example'},
